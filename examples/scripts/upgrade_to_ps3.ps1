@@ -32,6 +32,7 @@ function download-file
     $client = new-object system.net.WebClient
     $client.Headers.Add("user-agent", "PowerShell")
     $client.downloadfile($path, $local)
+    write-host "file downloaded successfully"
 }
 
 if (!(test-path $powershellpath))
@@ -77,5 +78,5 @@ else
 
 $FileName = $DownLoadUrl.Split('/')[-1]
 download-file $downloadurl "$powershellpath\$filename"
-Write-Host "File Downloaded; launching install now..."
+
 ."$powershellpath\$filename" /quiet /log "C:\powershell\install.log"

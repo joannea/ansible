@@ -19,8 +19,8 @@ No additional software needs to be installed on the remote machines for Ansible 
 
 .. _windows_installing:
 
-Installing
-``````````
+Installing on the Control Machine
+``````````````````````````````````
 
 On a Linux control machine::
 
@@ -55,57 +55,16 @@ communication channel that leverages Windows remoting::
 
     ansible windows [-i inventory] -m ping --ask-vault-pass
 
-.. _windows_what_modules_are_available:
+If you haven't done anything to prep your systems yet, this won't work yet.  This is covered in a later
+section about how to enable powershell remoting - and if neccessary - how to upgrade powershell to
+a version that is 3 or higher.
 
-What modules are available
-``````````````````````````
-
-Most of the Ansible modules in core Ansible are written for a combination of Linux/Unix machines and arbitrary web services, though there are various
-Windows modules as listed in the "windows" subcategory of the Ansible module index.  
-
-Browse this index to see what is available.
-
-In many cases, it may not be neccessary to even write or use an Ansible module.
-
-In particular, the "win_script" module can be used to run arbitrary powershell scripts, allowing Windows administrators familiar with powershell a very native way to do things, as in the following playbook::
-
-    - hosts: windows
-      tasks:
-        - win_script: foo.ps1 --argument --other-argument
-
-.. _windows_developers_developers_developers:
-
-Developers: Supported modules and how it works
-``````````````````````````````````````````````
-
-Developing ansible modules are covered in a later section, with a focus on Linux/Unix.
-
-For Windows, ansible modules are implemented in Powershell.  Skim the module development chapters before proceeding.
-
-Windows modules live in a "windows/" subfolder in the Ansible "library/" subtree.  For example, if a module is named
-"library/windows/win_ping", there will be embedded documentation in the "win_ping" file, and the actual powershell code will
-live in a "win_ping.ps1" file.
-
-Modules (ps1 files) should start as follows::
-
-    #!powershell
-    # WANT_JSON
-    # POWERSHELL_COMMON
-
-    # <license>
-    # code goes here, reading in stdin as JSON and outputting JSON
-
-The above magic is neccessary to tell Ansible to mix in some common code and also know how to push modules out.
-
-Taking a look at the sources for win_ping and the equivalent will make it easier to understand how things work by following
-the existing patterns.
-
-Additional modules may be submitted as pull requests to github.
+You'll run this command again later though, to make sure everything is working.
 
 .. _windows_system_prep:
 
-System Prep
-```````````
+Windows System Prep
+```````````````````
 
 In order for Ansible to manage your windows machines, you will have to enable Powershell remoting first, which also enables WinRM.
 
@@ -118,7 +77,7 @@ In the powershell session, run the following to enable PS Remoting and set the e
     $  Enable-PSRemoting -Force
     $  Set-ExecutionPolicy RemoteSigned
 
-If your Windows firewall is enabled, you must also run the following command to allow firewall access to the public firewall profile::
+If your Windows firewall is enabled, you must also run the following command to allow firewall access to the public firewall profile:
 
  .. code-block:: bash
 
@@ -128,7 +87,6 @@ If your Windows firewall is enabled, you must also run the following command to 
     # Windows 2008 / 2008R2
     $  NetSH ADVFirewall Set AllProfiles Settings remotemanagement Enable
 
-Best Practices
 By default, Powershell remoting enables an HTTP listener. The following commands enable an HTTPS listener, which secures communication between the Control Machine and windows.
 
 An SSL certificate for server authentication is required to create the HTTPS listener. The existence of an existing certificate in the computer account can be verified by using the MMC snap-in, as documented '
@@ -139,10 +97,82 @@ Alternatively, a self-signed SSL certificate can be generated in powershell usin
 
 .. code-block:: bash
 
-    $  Create the https listener
+    #  Create the https listener
     $  winrm create winrm/config/Listener?Address=*+Transport=HTTPS  @{Hostname="host_name";CertificateThumbprint="certificate_thumbprint"}
-    $  Delete the http listener
+    #  Delete the http listener
     $  WinRM delete winrm/config/listener?Address=*+Transport=HTTP
+    
+It's time to verify things are working::
+
+    ansible windows [-i inventory] -m ping --ask-vault-pass
+
+However, if you are still running Powershell 2.0 on remote systems, it's time to use Ansible to upgrade powershell
+before proceeding further, as some of the Ansible modules will require Powershell 3.0.  Thankfully it's self
+bootstrapping!
+
+.. _getting_to_powershell_three_or_higher:
+
+Getting to Powershell 3.0 or higher on Remote Systems
+``````````````````````````````````````````````````````
+
+Additionally, Powershell 3.0 or higher is needed for most modules.  You can actually use a minimal
+ansible example playbook to upgrade your windows systems from Powershell 2.0 to 3.0 in order to take
+advantage of the *other* ansible modules.  
+
+Looking at an ansible checkout, copy the examples/scripts/upgrade_to_ps3.ps1 script from the repo into
+your local directory, and run a playbook that looks like the following::
+
+   - hosts: windows
+     gather_facts: no
+     tasks:
+       - script: upgrade_to_ps3.ps1
+
+The hosts in the above group will then be running a new enough version of Powershell to be managed
+by the full compliment of Ansible modules.
+
+.. _what_windows_modules_are_available:
+
+What modules are available
+``````````````````````````
+
+Most of the Ansible modules in core Ansible are written for a combination of Linux/Unix machines and arbitrary web services, though there are various 
+Windows modules as listed in the "windows" subcategory of the Ansible module index.  
+
+Browse this index to see what is available.
+
+In many cases, it may not be neccessary to even write or use an Ansible module.
+
+In particular, the "win_script" module can be used to run arbitrary powershell scripts, allowing Windows administrators familiar with powershell a very native way to do things, as in the following playbook::
+
+    - hosts: windows
+      tasks:
+        - win_script: foo.ps1 --argument --other-argument
+
+.. _developers_developers_developers:
+
+Developers: Supported modules and how it works
+``````````````````````````````````````````````
+
+Developing ansible modules are covered in a later section of the documentation, with a focus on Linux/Unix.
+What if you want to write Windows modules for ansible though?
+
+For Windows, ansible modules are implemented in Powershell.  Skim those Linux/Unix module development chapters before proceeding.
+
+Windows modules live in a "windows/" subfolder in the Ansible "library/" subtree.  For example, if a module is named
+"library/windows/win_ping", there will be embedded documentation in the "win_ping" file, and the actual powershell code will live in a "win_ping.ps1" file.  Take a look at the sources and this will make more sense.
+
+Modules (ps1 files) should start as follows::
+
+    #!powershell
+    # WANT_JSON
+    # POWERSHELL_COMMON
+
+    # <license>
+    # code goes here, reading in stdin as JSON and outputting JSON
+
+The above magic is neccessary to tell Ansible to mix in some common code and also know how to push modules out.  The common code contains some nice wrappers around working with hash data structures and emitting JSON results, and possibly a few mpmore useful things.  Regular Ansible has this same concept for reusing Python code - this is just the windows equivalent.
+
+What modules you see in windows/ are just a start.  Additional modules may be submitted as pull requests to github.
 
 .. _windows_and_linux_control_machine:
 
@@ -226,6 +256,8 @@ form of new modules, tweaks to existing modules, documentation, or something els
        How to write modules
    :doc:`playbooks`
        Learning ansible's configuration management language
+   `List of Windows Modules <http://docs.ansible.com/list_of_windows_modules.html>`_
+       Windows specific module list, all implemented in powershell
    `Mailing List <http://groups.google.com/group/ansible-project>`_
        Questions? Help? Ideas?  Stop by the list on Google Groups
    `irc.freenode.net <http://irc.freenode.net>`_

@@ -78,6 +78,5 @@ else
 
 $FileName = $DownLoadUrl.Split('/')[-1]
 download-file $downloadurl "$powershellpath\$filename"
-write-host "Download successful"
-exit
+Get-Process | Out-File c:\powershell\whatisrunningrightnow.txt
 ."$powershellpath\$filename" /quiet /log "C:\powershell\install.log"

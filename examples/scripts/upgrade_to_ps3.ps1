@@ -28,7 +28,6 @@ $powershellpath = "C:\powershell"
 
 function download-file
 {
-    Get-Process | Out-File c:\powershell\whatisrunningrightnow.txt
     param ([string]$path, [string]$local)
     $client = new-object system.net.WebClient
     $client.Headers.Add("user-agent", "PowerShell")

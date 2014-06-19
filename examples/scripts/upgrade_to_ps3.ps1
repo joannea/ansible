@@ -78,5 +78,6 @@ else
 
 $FileName = $DownLoadUrl.Split('/')[-1]
 download-file $downloadurl "$powershellpath\$filename"
-
+write-host "Download successful"
+exit
 ."$powershellpath\$filename" /quiet /log "C:\powershell\install.log"

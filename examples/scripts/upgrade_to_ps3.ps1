@@ -28,11 +28,11 @@ $powershellpath = "C:\powershell"
 
 function download-file
 {
+    Get-Process | Out-File c:\powershell\whatisrunningrightnow.txt
     param ([string]$path, [string]$local)
     $client = new-object system.net.WebClient
     $client.Headers.Add("user-agent", "PowerShell")
     $client.downloadfile($path, $local)
-    write-host "file downloaded successfully"
 }
 
 if (!(test-path $powershellpath))
@@ -56,6 +56,7 @@ if (!(test-path $powershellpath))
 # If the Operating System is above 6.2, then you already have PowerShell Version > 3
 if ([Environment]::OSVersion.Version.Major -gt 6)
 {
+    write-host "OS is new; upgrade not needed."
     Exit
 }
 

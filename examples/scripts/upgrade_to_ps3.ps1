@@ -17,6 +17,7 @@
 # 6.2 is 2012
 # 6.3 is 2012 R2
 
+Start-Transcript "C:\powershell\scriptlog.txt"
 
 if ($PSVersionTable.psversion.Major -ge 3)
 {

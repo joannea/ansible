@@ -1,0 +1,52 @@
+# test code for the file module when using winrm connection
+# (c) 2014, Chris Church <chris@ninemoreminutes.com>
+
+# This file is part of Ansible
+#
+# Ansible is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# Ansible is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
+
+- name: test file module with state=file on existing file
+  file: path="C:/Windows/win.ini" state=file
+  register: file_file_result
+
+- name: test file module with state=file on existing directory
+  file: path="C:/Windows" state=file
+  register: file_dir_result
+  ignore_errors: true
+
+- name: test file module with state=file on missing file
+  file: path="C:/this_file_should_not_exist.txt" state=file
+  register: file_missing_result
+  ignore_errors: true
+
+- name: test file module with state=directory on existing file
+  file: path="C:/Windows/win.ini" state=directory
+  register: dir_file_result
+
+- name: test file module with state=directory on existing directory
+  file: path="C:/Windows" state=directory
+  register: dir_dir_result
+
+- name: define random temp directory
+  set_fact: dir_temp_name="winrm-test-{{ 9999|random }}"
+  tags: me
+
+- name: test file module with state=directory on missing directory
+  file: path="C:/Windows/Temp/{{ dir_temp_name }}" state=directory
+  register: dir_missing_result
+
+- name: test file module with state=directory on path already used by a file
+  file: path="C:/Windows/win.ini/{{ dir_temp_name }}" state=directory
+  register: dir_error_result
+  tags: me

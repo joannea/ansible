@@ -27,6 +27,18 @@
 # USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
+# Stop script execution on error, return JSON with exception object.
+$ErrorActionPreference = "Stop";
+trap
+{
+    $_obj = New-Object psobject @{
+        failed = $true
+        msg = $_
+    };
+    echo $_obj | ConvertTo-Json;
+    Exit 1;
+}
+
 # Helper function to parse Ansible JSON arguments from a file passed as
 # the single argument to the module
 # Example: $params = Parse-Args $args
@@ -52,7 +64,14 @@ Function Set-Attr($obj, $name, $value)
         $obj = New-Object psobject
     }
 
-    $obj | Add-Member -Force -MemberType NoteProperty -Name $name -Value $value
+    If ($obj.$name.GetType)
+    {
+        $obj.$name = $value
+    }
+    Else
+    {
+        $obj | Add-Member -Force -MemberType NoteProperty -Name $name -Value $value
+    }
 }
 
 # Helper function to get an "attribute" from a psobject instance in powershell.

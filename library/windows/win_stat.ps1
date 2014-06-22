@@ -19,13 +19,13 @@
 
 $params = Parse-Args $args;
 
-$path = Get-Attr $params "path" $FALSE;
-If ($path -eq $FALSE)
+$path = Get-Attr $params "path" $false;
+If ($path -eq $false)
 {
     Fail-Json (New-Object psobject) "missing required argument: path";
 }
 
-$get_md5 = Get-Attr $params "get_md5" $TRUE | ConvertTo-Bool;
+$get_md5 = Get-Attr $params "get_md5" $true | ConvertTo-Bool;
 
 $result = New-Object psobject @{
     stat = New-Object psobject
@@ -38,17 +38,19 @@ If (Test-Path $path)
    $info = Get-Item $path;
    If ($info.Directory) # Only files have the .Directory attribute.
    {
-      Set-Attr $result.stat "isdir" $FALSE;
+      Set-Attr $result.stat "isdir" $false;
+      Set-Attr $result.stat "isreg" $true;
       Set-Attr $result.stat "size" $info.Length;
    }
    Else
    {
-      Set-Attr $result.stat "isdir" $TRUE;
+      Set-Attr $result.stat "isdir" $true;
+      Set-Attr $result.stat "isreg" $false;
    }
 }
 Else
 {
-   Set-Attr $result.stat "exists" $FALSE;
+   Set-Attr $result.stat "exists" $false;
 }
 
 If ($get_md5 -and $result.stat.exists -and -not $result.stat.isdir)

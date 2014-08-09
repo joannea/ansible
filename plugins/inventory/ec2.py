@@ -218,7 +218,7 @@ class Ec2Inventory(object):
             self.hostname_variable = config.get('ec2', 'hostname_variable')
         else:
             self.hostname_variable = None
-            
+
         # Route53
         self.route53_enabled = config.getboolean('ec2', 'route53')
         self.route53_excluded_zones = []
@@ -390,7 +390,7 @@ class Ec2Inventory(object):
         # If we can't get a nice hostname, use the destination address
         if not hostname:
             hostname = dest
-        
+
         hostname = self.to_safe(hostname).lower()
 
         # if we only want to include hosts that match a pattern, skip those that don't
@@ -432,7 +432,7 @@ class Ec2Inventory(object):
             self.push(self.inventory, key_name, hostname)
             if self.nested_groups:
                 self.push_group(self.inventory, 'keys', key_name)
-        
+
         # Inventory: Group by security group
         try:
             for group in instance.groups:
@@ -498,7 +498,7 @@ class Ec2Inventory(object):
         # If we can't get a nice hostname, use the destination address
         if not hostname:
             hostname = dest
-        
+
         hostname = self.to_safe(hostname).lower()
 
         # Add to index
@@ -519,13 +519,13 @@ class Ec2Inventory(object):
         self.push(self.inventory, instance.availability_zone, hostname)
         if self.nested_groups:
             self.push_group(self.inventory, region, instance.availability_zone)
-        
+
         # Inventory: Group by instance type
         type_name = self.to_safe('type_' + instance.instance_class)
         self.push(self.inventory, type_name, hostname)
         if self.nested_groups:
             self.push_group(self.inventory, 'types', type_name)
-        
+
         # Inventory: Group by security group
         try:
             if instance.security_group:

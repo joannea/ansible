@@ -1,0 +1,5 @@
+---
+
+test_win_msi_url: http://downloads.sourceforge.net/project/sevenzip/7-Zip/9.22/7z922-x64.msi
+test_win_msi_path: 'C:\7z922-x64.msi'
+test_win_msi_creates: 'C:\Program Files\7-Zip\7z.exe'

@@ -17,11 +17,46 @@
 # along with Ansible.  If not, see <http://www.gnu.org/licenses/>.
 
 - name: use win_get_url module to download msi
-  win_get_url: url=http://downloads.sourceforge.net/project/sevenzip/7-Zip/9.22/7z922-x64.msi dest='C:\7z922-x64.msi'
+  win_get_url: url="{{ test_win_msi_url }}" dest="{{ test_win_msi_path }}"
   register: win_get_url_result
 
-- name: install 7zip msi
-  win_msi: path="{{ win_get_url_result.win_get_url.dest }}"
+- name: install msi with no path parameter
+  action: win_msi
+  register: win_msi_install_no_path
+  ignore_errors: true
+
+- name: check win_msi result with no path
+  assert:
+    that:
+      - "win_msi_install_no_path|failed"
+      - "not win_msi_install_no_path|changed"
+      - "win_msi_install_no_path.parsed|default(True)"
+
+#- name: install msi with invalid path parameter
+s#  win_msi: path="{{ test_win_msi_path }}asdf"
+#  register: win_msi_install_invalid_path
+#  ignore_errors: true
+
+#- name: check win_msi result with invalid path
+#  assert:
+#    that:
+#      - "win_msi_install_invalid_path|failed"
+#      - "not win_msi_install_invalid_path|changed"
+#      - "win_msi_install_invalid_path.parsed|default(True)"
+
+- name: install msi with invalid state parameter
+  win_msi: path="{{ test_win_msi_path }}" state="persent"
+  register: win_msi_install_invalid_state
+  ignore_errors: true
+
+- name: check win_msi result with invalid state
+  assert:
+    that:
+      - "win_msi_install_invalid_state|failed"
+      - "not win_msi_install_invalid_state|changed"
+
+- name: install msi
+  win_msi: path="{{ test_win_msi_path }}"
   register: win_msi_install_result
 
 - name: check win_msi install result
@@ -30,8 +65,18 @@
       - "not win_msi_install_result|failed"
       - "win_msi_install_result|changed"
 
-- name: uninstall 7zip msi
-  win_msi: path="{{ win_get_url_result.win_get_url.dest }}" state=absent
+- name: install msi again only if not installed
+  win_msi: path="{{ test_win_msi_path }}" creates="{{ test_win_msi_creates }}"
+  register: win_msi_install_again_result
+
+- name: check win_msi install again result
+  assert: 
+    that:
+      - "not win_msi_install_again_result|failed"
+      - "not win_msi_install_again_result|changed"
+
+- name: uninstall msi
+  win_msi: path="{{ test_win_msi_path }}" state=absent
   register: win_msi_uninstall_result
 
 - name: check win_msi uninstall result

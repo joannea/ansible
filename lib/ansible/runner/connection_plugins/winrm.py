@@ -36,6 +36,11 @@ try:
     from winrm.protocol import Protocol
 except ImportError:
     raise errors.AnsibleError("winrm is not installed")
+try:
+    from winrm.unified_transport import Transport
+    WINRM_HAS_UNIFIED_TRANSPORT = True
+except ImportError:
+    WINRM_HAS_UNIFIED_TRANSPORT = False
 
 _winrm_cache = {
     # 'user:pwhash@host:port': <protocol instance>
@@ -64,24 +69,40 @@ class Connection(object):
         '''
         Establish a WinRM connection over HTTP/HTTPS.
         '''
+        hostvars = self.runner.inventory.get_variables(self.delegate or self.host)
         port = self.port or 5986
+        password = self.password or ''
         vvv("ESTABLISH WINRM CONNECTION FOR USER: %s on PORT %s TO %s" % \
             (self.user, port, self.host), host=self.host)
         netloc = '%s:%d' % (self.host, port)
-        cache_key = '%s:%s@%s:%d' % (self.user, hashlib.md5(self.password).hexdigest(), self.host, port)
+        cache_key = '%s:%s@%s:%d' % (self.user, hashlib.md5(password).hexdigest(), self.host, port)
         if cache_key in _winrm_cache:
             vvvv('WINRM REUSE EXISTING CONNECTION: %s' % cache_key, host=self.host)
             return _winrm_cache[cache_key]
-        transport_schemes = [('plaintext', 'https'), ('plaintext', 'http')] # FIXME: ssl/kerberos
-        if port == 5985:
-            transport_schemes = reversed(transport_schemes)
+        scheme = str(hostvars.get('ansible_winrm_scheme', 'http' if port == 5985 else 'https'))
+        path = str(hostvars.get('ansible_winrm_path', '/wsman'))
+        if WINRM_HAS_UNIFIED_TRANSPORT:
+            transports = ['unified']
+            if '@' in self.user:
+                realm = self.user.split('@', 1)[1]
+            else:
+                realm = None
+        else:
+            transports = []
+            if '@' in self.user:
+                transports.append('kerberos')
+                realm = self.user.split('@', 1)[1]
+            if password or not transports:
+                transports.append('plaintext')
+                realm = None
         exc = None
-        for transport, scheme in transport_schemes:
-            endpoint = urlparse.urlunsplit((scheme, netloc, '/wsman', '', ''))
+        for transport in transports:
+            endpoint = urlparse.urlunsplit((scheme, netloc, path, '', ''))
             vvvv('WINRM CONNECT: transport=%s endpoint=%s' % (transport, endpoint),
                  host=self.host)
             protocol = Protocol(endpoint, transport=transport,
-                                username=self.user, password=self.password)
+                                username=self.user, password=password, realm=realm)
+            protocol.transport.timeout = self.runner.timeout
             try:
                 protocol.send_message('')
                 _winrm_cache[cache_key] = protocol

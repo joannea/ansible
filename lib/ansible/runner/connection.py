@@ -31,8 +31,9 @@ class Connector(object):
     def __init__(self, runner):
         self.runner = runner
 
-    def connect(self, host, port, user, password, transport, private_key_file):
+    def connect(self, host, port, user, password, transport, private_key_file, delegate=None):
         conn = utils.plugins.connection_loader.get(transport, self.runner, host, port, user=user, password=password, private_key_file=private_key_file)
+        conn.delegate = delegate
         if conn is None:
             raise AnsibleError("unsupported connection type: %s" % transport)
         if private_key_file:

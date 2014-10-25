@@ -53,9 +53,11 @@ def _encode_script(script, as_list=False):
         return cmd_parts
     return ' '.join(cmd_parts)
 
-def _build_file_cmd(cmd_parts):
+def _build_file_cmd(cmd_parts, quote_args=True):
     '''Build command line to run a file, given list of file name plus args.'''
-    return ' '.join(_common_args + ['-ExecutionPolicy', 'Unrestricted', '-File'] + ['"%s"' % x for x in cmd_parts])
+    if quote_args:
+        cmd_parts = ['"%s"' % x for x in cmd_parts]
+    return ' '.join(['&'] + cmd_parts)
 
 class ShellModule(object):
 

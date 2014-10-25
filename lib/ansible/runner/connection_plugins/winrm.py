@@ -87,7 +87,7 @@ class Connection(object):
                 _winrm_cache[cache_key] = protocol
                 return protocol
             except WinRMTransportError, exc:
-                err_msg = str(exc.args[0])
+                err_msg = str(exc)
                 if re.search(r'Operation\s+?timed\s+?out', err_msg, re.I):
                     raise errors.AnsibleError("the connection attempt timed out")
                 m = re.search(r'Code\s+?(\d{3})', err_msg)
@@ -143,7 +143,7 @@ class Connection(object):
             vvv("EXEC %s" % cmd, host=self.host)
         # For script/raw support.
         if cmd_parts and cmd_parts[0].lower().endswith('.ps1'):
-            script = powershell._build_file_cmd(cmd_parts)
+            script = powershell._build_file_cmd(cmd_parts, quote_args=False)
             cmd_parts = powershell._encode_script(script, as_list=True)
         try:
             result = self._winrm_exec(cmd_parts[0], cmd_parts[1:], from_exec=True)

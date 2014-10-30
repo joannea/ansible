@@ -37,10 +37,16 @@ try:
 except ImportError:
     raise errors.AnsibleError("winrm is not installed")
 try:
-    from winrm.unified_transport import Transport
+    from winrm.unified_transport import Transport as _
     WINRM_HAS_UNIFIED_TRANSPORT = True
 except ImportError:
     WINRM_HAS_UNIFIED_TRANSPORT = False
+try:
+    from winrm.requests_transport import Transport as _
+    WINRM_HAS_REQUESTS_TRANSPORT = True
+except ImportError:
+    WINRM_HAS_REQUESTS_TRANSPORT = False
+
 
 _winrm_cache = {
     # 'user:pwhash@host:port': <protocol instance>
@@ -81,7 +87,14 @@ class Connection(object):
             return _winrm_cache[cache_key]
         scheme = str(hostvars.get('ansible_winrm_scheme', 'http' if port == 5985 else 'https'))
         path = str(hostvars.get('ansible_winrm_path', '/wsman'))
-        if WINRM_HAS_UNIFIED_TRANSPORT:
+        if WINRM_HAS_REQUESTS_TRANSPORT:
+            verify = utils.boolean(hostvars.get('ansible_winrm_verify', True))
+            transports = ['requests']
+            if '@' in self.user:
+                realm = self.user.split('@', 1)[1]
+            else:
+                realm = None
+        elif WINRM_HAS_UNIFIED_TRANSPORT:
             transports = ['unified']
             if '@' in self.user:
                 realm = self.user.split('@', 1)[1]

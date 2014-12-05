@@ -32,16 +32,12 @@ if os.path.exists(os.path.join(this_dir, '.gitmodules')) and not os.path.exists(
         fp = StringIO.StringIO(gm)
         cp.readfp(fp)
         for section in cp.sections():
-            print section
             try:
                 sm_path = cp.get(section, 'path')
-                print sm_path, rel_path
                 if sm_path != rel_path:
                     continue
                 sm_url = cp.get(section, 'url')
-                print sm_url
                 sm_branch = cp.get(section, 'branch')
-                print sm_branch
             except ConfigParser.Error:
                 continue
             sm_url = sm_url.replace('.git', '/archive/%s.zip' % sm_branch)

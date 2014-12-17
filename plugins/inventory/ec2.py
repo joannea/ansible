@@ -585,7 +585,6 @@ class Ec2Inventory(object):
         self.index[hostname] = [region, instance.id]
 
         # Inventory: Group by instance ID (always a group of 1)
-<<<<<<< HEAD
         if self.group_by_instance_id:
             self.inventory[instance.id] = [hostname]
             if self.nested_groups:

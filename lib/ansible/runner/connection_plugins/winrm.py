@@ -26,6 +26,7 @@ import urlparse
 from ansible import errors
 from ansible import utils
 from ansible.callbacks import vvv, vvvv, verbose
+from ansible.constants import mk_boolean, shell_expand_path
 from ansible.runner.shell_plugins import powershell
 
 try:
@@ -48,11 +49,6 @@ def vvvvv(msg, host=None):
 class Connection(object):
     '''WinRM connections over HTTP/HTTPS.'''
 
-    transport_schemes = {
-        'http': [('kerberos', 'http'), ('plaintext', 'http'), ('plaintext', 'https')],
-        'https': [('kerberos', 'https'), ('plaintext', 'https')],
-        }
-
     def __init__(self,  runner, host, port, user, password, *args, **kwargs):
         self.runner = runner
         self.host = host
@@ -74,24 +70,47 @@ class Connection(object):
         '''
         Establish a WinRM connection over HTTP/HTTPS.
         '''
-        port = self.port or 5986
+        host_vars = self.runner.get_inject_vars(self.delegate or self.host)
+        host = host_vars.get('ansible_winrm_host', self.host)
+        port = int(host_vars.get('ansible_winrm_port', self.port or 5986))
+        username = host_vars.get('ansible_winrm_user', self.user)
+        password = host_vars.get('ansible_winrm_password', self.password)
+        scheme = host_vars.get('ansible_winrm_scheme', 'http' if port == 5985 else 'https')
+        path = host_vars.get('ansible_winrm_path', '/wsman')
+        transports = host_vars.get('ansible_winrm_transport', 'kerberos,plaintext').split(',')
+        transports = [t.strip().lower() for t in transports]
+        realm = host_vars.get('ansible_winrm_realm', None)
+        if scheme == 'https':
+            import ssl
+            verify_cert = mk_boolean(host_vars.get('ansible_winrm_verify_cert', True))
+            if hasattr(ssl, '_create_default_https_context') and hasattr(ssl, '_create_unverified_context') and not verify_cert:
+                ssl._create_default_https_context = ssl._create_unverified_context
+            elif verify_cert:
+                pass # FIXME: How to validate cert on Python < 2.7.9?
+            cert_pem = shell_expand_path(host_vars.get('ansible_winrm_cert_pem', None))
+            cert_key_pem = shell_expand_path(host_vars.get('ansible_winrm_cert_key_pem', None))
+        else:
+            cert_pem = None
+            cert_key_pem = None
+
         vvv("ESTABLISH WINRM CONNECTION FOR USER: %s on PORT %s TO %s" % \
-            (self.user, port, self.host), host=self.host)
-        netloc = '%s:%d' % (self.host, port)
+            (username, port, host), host=self.host)
+        netloc = '%s:%d' % (host, port)
         exc = None
-        for transport, scheme in self.transport_schemes['http' if port == 5985 else 'https']:
-            if transport == 'kerberos' and (not HAVE_KERBEROS or not '@' in self.user):
+        for transport in transports:
+            if transport == 'kerberos' and (not HAVE_KERBEROS or (not realm and not '@' in username)):
                 continue
             if transport == 'kerberos':
-                realm = self.user.split('@', 1)[1].strip() or None
+                realm = username.split('@', 1)[1].strip() or realm
             else:
                 realm = None
-            endpoint = urlparse.urlunsplit((scheme, netloc, '/wsman', '', ''))
+            endpoint = urlparse.urlunsplit((scheme, netloc, path, '', ''))
             vvvv('WINRM CONNECT: transport=%s endpoint=%s' % (transport, endpoint),
                  host=self.host)
             protocol = Protocol(endpoint, transport=transport,
-                                username=self.user, password=self.password,
-                                realm=realm)
+                                username=username, password=password,
+                                realm=realm, cert_pem=cert_pem,
+                                cert_key_pem=cert_key_pem)
             try:
                 protocol.send_message('')
                 return protocol

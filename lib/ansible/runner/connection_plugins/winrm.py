@@ -28,6 +28,7 @@ from ansible import utils
 from ansible.callbacks import vvv, vvvv, verbose
 from ansible.constants import mk_boolean, shell_expand_path
 from ansible.runner.shell_plugins import powershell
+from ansible.utils import template
 
 try:
     from winrm import Response
@@ -61,34 +62,42 @@ class Connection(object):
         self.protocol = None
         self.shell_id = None
         self.delegate = None
+        self.host_vars = None
 
         # Add runas support
         #self.become_methods_supported=['runas']
         self.become_methods_supported=[]
 
+    def _lookup_host_var(self, key, default=None):
+        if self.host_vars is None:
+            self.host_vars = self.runner.get_inject_vars(self.delegate or self.host)
+        if key in self.host_vars:
+            return template.template(self.runner.basedir, self.host_vars[key], self.host_vars)
+        else:
+            return default
+
     def _winrm_connect(self):
         '''
         Establish a WinRM connection over HTTP/HTTPS.
         '''
-        host_vars = self.runner.get_inject_vars(self.delegate or self.host)
-        host = host_vars.get('ansible_winrm_host', self.host)
-        port = int(host_vars.get('ansible_winrm_port', self.port or 5986))
-        username = host_vars.get('ansible_winrm_user', self.user)
-        password = host_vars.get('ansible_winrm_password', self.password)
-        scheme = host_vars.get('ansible_winrm_scheme', 'http' if port == 5985 else 'https')
-        path = host_vars.get('ansible_winrm_path', '/wsman')
-        transports = host_vars.get('ansible_winrm_transport', 'kerberos,plaintext').split(',')
+        host = self._lookup_host_var('ansible_winrm_host', self.host)
+        port = int(self._lookup_host_var('ansible_winrm_port', self.port or 5986))
+        username = self._lookup_host_var('ansible_winrm_user', self.user)
+        password = self._lookup_host_var('ansible_winrm_password', self.password)
+        scheme = self._lookup_host_var('ansible_winrm_scheme', 'http' if port == 5985 else 'https')
+        path = self._lookup_host_var('ansible_winrm_path', '/wsman')
+        transports = self._lookup_host_var('ansible_winrm_transport', 'kerberos,plaintext').split(',')
         transports = [t.strip().lower() for t in transports]
-        realm = host_vars.get('ansible_winrm_realm', None)
+        realm = self._lookup_host_var('ansible_winrm_realm', None)
         if scheme == 'https':
             import ssl
-            verify_cert = mk_boolean(host_vars.get('ansible_winrm_verify_cert', True))
+            verify_cert = mk_boolean(self._lookup_host_var('ansible_winrm_verify_cert', True))
             if hasattr(ssl, '_create_default_https_context') and hasattr(ssl, '_create_unverified_context') and not verify_cert:
                 ssl._create_default_https_context = ssl._create_unverified_context
             elif verify_cert:
                 pass # FIXME: How to validate cert on Python < 2.7.9?
-            cert_pem = shell_expand_path(host_vars.get('ansible_winrm_cert_pem', None))
-            cert_key_pem = shell_expand_path(host_vars.get('ansible_winrm_cert_key_pem', None))
+            cert_pem = shell_expand_path(self._lookup_host_var('ansible_winrm_cert_pem', None))
+            cert_key_pem = shell_expand_path(self._lookup_host_var('ansible_winrm_cert_key_pem', None))
         else:
             cert_pem = None
             cert_key_pem = None

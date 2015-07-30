@@ -140,6 +140,31 @@ class Connection(ConnectionBase):
         stream['#text'] = base64.b64encode(to_bytes(stdin))
         rs = protocol.send_message(xmltodict.unparse(rq))
 
+    def _winrm_command_output_thread(self, protocol, shell_id, command_id):
+        queue = getattr(self, '_winrm_put_queue', None)
+        stdout_buffer, stderr_buffer = [], []
+        command_done = False
+        while not command_done:
+            stdout, stderr, return_code, command_done = \
+                protocol._raw_get_command_output(shell_id, command_id)
+            stdout_buffer.append(stdout)
+            stderr_buffer.append(stderr)
+            if stdout and queue:
+                stdout_lines = stdout.splitlines()
+                for l in stdout_lines:
+                    if not l.startswith('@'):
+                        continue
+                    try:
+                        v = int(l[1:].strip())
+                        queue.put(v)
+                    except ValueError:
+                        pass
+            if not command_done and stdout:
+                self._display.vvvvvv('WINRM INTERIM STDOUT %s' % to_unicode(stdout), host=self._play_context.remote_addr)
+            if not command_done and stderr:
+                self._display.vvvvvv('WINRM INTERIM STDERR %s' % to_unicode(stderr), host=self._play_context.remote_addr)
+        return ''.join(stdout_buffer), ''.join(stderr_buffer), return_code
+
     def _winrm_exec(self, command, args=(), from_exec=False, stdin_iterator=None):
         if from_exec:
             self._display.vvvvv("WINRM EXEC %r %r" % (command, args), host=self._play_context.remote_addr)
@@ -152,12 +177,21 @@ class Connection(ConnectionBase):
         command_id = None
         try:
             if stdin_iterator:
+                from multiprocessing.pool import ThreadPool
+                pool = ThreadPool(processes=1)
                 command_id = self.protocol.run_command(self.shell_id, to_bytes(command), map(to_bytes, args), console_mode_stdin=False)
+                async_result = pool.apply_async(self._winrm_command_output_thread, (self.protocol, self.shell_id, command_id,))
                 for stdin in stdin_iterator:
+                    if async_result.ready():
+                        break
+                    #self._display.vvvvvv("WINRM STDIN %s" % to_unicode(stdin), host=self._play_context.remote_addr)
                     self._winrm_send_input(self.protocol, self.shell_id, command_id, stdin)
+                response = Response(async_result.get())
+                pool.close()
+                pool.join()
             else:
                 command_id = self.protocol.run_command(self.shell_id, to_bytes(command), map(to_bytes, args))
-            response = Response(self.protocol.get_command_output(self.shell_id, command_id))
+                response = Response(self.protocol.get_command_output(self.shell_id, command_id))
             if from_exec:
                 self._display.vvvvv('WINRM RESULT %r' % to_unicode(response), host=self._play_context.remote_addr)
             else:
@@ -207,18 +241,31 @@ class Connection(ConnectionBase):
         return (result.status_code, '', result.std_out, result.std_err)
 
     def _put_file_iterator(self, in_path, out_path, buffer_size=32768):
+        import Queue
+        self._winrm_put_queue = Queue.Queue()
         in_size = os.path.getsize(in_path)
         with open(in_path) as in_file:
             yield '$s = [System.IO.File]::OpenWrite("%s")\r\n' % out_path
+            received_offset = 0
             for offset in xrange(0, in_size, buffer_size):
                 out_data = in_file.read(buffer_size)
                 b64_data = base64.b64encode(out_data)
                 self._display.vvvvv('WINRM PUT "%s" to "%s" (offset=%d size=%d)' % (in_path, out_path, offset, len(out_data)), host=self._play_context.remote_addr)
-                yield '$b = [System.Convert]::FromBase64String("%s")\r\n' % b64_data
-                yield '[void]$s.Write($b, 0, $b.length)\r\n'
-            yield '[void]$s.SetLength(%d)\r\n' % in_size
-            yield '[void]$s.Close()\r\n'
-            yield 'exit 0\r\n'
+                yield 'Write-Host "@%d"\r\n$b = [System.Convert]::FromBase64String("%s")\r\n[void]$s.Write($b, 0, $b.length)\r\n' % (offset, b64_data)
+                while (offset - received_offset) > (buffer_size * 8):
+                    try:
+                        received_offset = self._winrm_put_queue.get(True, 1.0)
+                        self._winrm_put_queue.task_done()
+                    except Queue.Empty:
+                        pass
+            yield '[void]$s.SetLength(%d); [void]$s.Close(); Exit 0;\n' % in_size
+            while received_offset < offset:
+                try:
+                    received_offset = self._winrm_put_queue.get(True, 1.0)
+                    self._winrm_put_queue.task_done()
+                except Queue.Empty:
+                    pass
+        self._winrm_put_queue.join()
 
     def put_file(self, in_path, out_path):
         super(Connection, self).put_file(in_path, out_path)

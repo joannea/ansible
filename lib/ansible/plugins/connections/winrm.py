@@ -20,11 +20,18 @@ __metaclass__ = type
 
 import base64
 import os
+from multiprocessing.pool import ThreadPool
+import Queue
 import re
 import shlex
 import traceback
 
 from six.moves.urllib import parse
+
+try:
+    import xmltodict
+except ImportError:
+    raise AnsibleError("xmltodict is not installed")
 
 try:
     from winrm import Response
@@ -46,6 +53,7 @@ from ansible.plugins.connections import ConnectionBase
 from ansible.plugins import shell_loader
 from ansible.utils.path import makedirs_safe
 from ansible.utils.unicode import to_bytes, to_unicode
+
 
 class Connection(ConnectionBase):
     '''WinRM connections over HTTP/HTTPS.'''
@@ -122,7 +130,35 @@ class Connection(ConnectionBase):
         if exc:
             raise AnsibleError(str(exc))
 
-    def _winrm_exec(self, command, args=(), from_exec=False):
+    def _winrm_send_input(self, protocol, shell_id, command_id, stdin):
+        rq = {'env:Envelope': protocol._get_soap_header(
+            resource_uri='http://schemas.microsoft.com/wbem/wsman/1/windows/shell/cmd',
+            action='http://schemas.microsoft.com/wbem/wsman/1/windows/shell/Send',
+            shell_id=shell_id)}
+        stream = rq['env:Envelope'].setdefault('env:Body', {}).setdefault('rsp:Send', {})\
+            .setdefault('rsp:Stream', {})
+        stream['@Name'] = 'stdin'
+        stream['@CommandId'] = command_id
+        stream['#text'] = base64.b64encode(to_bytes(stdin))
+        rs = protocol.send_message(xmltodict.unparse(rq))
+
+    def _winrm_command_output_thread(self, command_id, stdout_queue=None):
+        stdout_buffer, stderr_buffer = [], []
+        command_done = False
+        while not command_done:
+            stdout, stderr, return_code, command_done = \
+                self.protocol._raw_get_command_output(self.shell_id, command_id)
+            stdout_buffer.append(stdout)
+            stderr_buffer.append(stderr)
+            if stdout and stdout_queue:
+                stdout_queue.put(stdout)
+            if stdout:
+                self._display.verbose('WINRM PARTIAL STDOUT %s' % to_unicode(stdout), host=self._play_context.remote_addr, caplevel=6)
+            if stderr:
+                self._display.verbose('WINRM PARTIAL STDERR %s' % to_unicode(stderr), host=self._play_context.remote_addr, caplevel=6)
+        return ''.join(stdout_buffer), ''.join(stderr_buffer), return_code
+
+    def _winrm_exec(self, command, args=(), from_exec=False, stdin_iterator=None, stdout_queue=None):
         if from_exec:
             self._display.vvvvv("WINRM EXEC %r %r" % (command, args), host=self._play_context.remote_addr)
         else:
@@ -133,8 +169,21 @@ class Connection(ConnectionBase):
             self.shell_id = self.protocol.open_shell(codepage=65001) # UTF-8
         command_id = None
         try:
-            command_id = self.protocol.run_command(self.shell_id, to_bytes(command), map(to_bytes, args))
-            response = Response(self.protocol.get_command_output(self.shell_id, command_id))
+            if stdin_iterator:
+                pool = ThreadPool(processes=1)
+                command_id = self.protocol.run_command(self.shell_id, to_bytes(command), map(to_bytes, args), console_mode_stdin=False)
+                async_result = pool.apply_async(self._winrm_command_output_thread, (command_id, stdout_queue))
+                for stdin in stdin_iterator:
+                    if async_result.ready():
+                        break
+                    self._display.verbose("WINRM PARTIAL STDIN %s" % to_unicode(stdin), host=self._play_context.remote_addr, caplevel=6)
+                    self._winrm_send_input(self.protocol, self.shell_id, command_id, stdin)
+                response = Response(async_result.get())
+                pool.close()
+                pool.join()
+            else:
+                command_id = self.protocol.run_command(self.shell_id, to_bytes(command), map(to_bytes, args))
+                response = Response(self.protocol.get_command_output(self.shell_id, command_id))
             if from_exec:
                 self._display.vvvvv('WINRM RESULT %r' % to_unicode(response), host=self._play_context.remote_addr)
             else:
@@ -183,45 +232,80 @@ class Connection(ConnectionBase):
         result.std_err = to_unicode(result.std_err)
         return (result.status_code, '', result.std_out, result.std_err)
 
+    def _get_next_offset(self, stdout_queue, current_offset=0):
+        try:
+            stdout = stdout_queue.get(True, 1.0)
+            stdout_queue.task_done()
+            for line in stdout.splitlines():
+                line = line.strip()
+                if not line.startswith('@'):
+                    continue
+                try:
+                    offset = int(line[1:])
+                except ValueError:
+                    continue
+                current_offset = max(current_offset, offset)
+        except Queue.Empty:
+            pass
+        return current_offset
+
+    def _put_file_stdin_iterator(self, in_path, out_path, buffer_size=65536, stdout_queue=None):
+        # FIXME: Determine buffer size based on MaxEnvelopeSize.
+        in_size = os.path.getsize(in_path)
+        with open(in_path) as in_file:
+            received_offset = 0
+            for offset in xrange(0, in_size, buffer_size):
+                out_data = in_file.read(buffer_size)
+                b64_data = base64.b64encode(out_data)
+                self._display.vvvvv('WINRM PUT "%s" to "%s" (offset=%d size=%d)' % (in_path, out_path, offset, len(out_data)), host=self._play_context.remote_addr)
+                yield '%s\r\n' % b64_data
+                while (offset - received_offset) > (buffer_size * 8):
+                    received_offset = self._get_next_offset(stdout_queue, received_offset)
+            yield '\r\n'
+            while received_offset < in_size:
+                received_offset = self._get_next_offset(stdout_queue, received_offset)
+            stdout_queue.join()
+
     def put_file(self, in_path, out_path):
         super(Connection, self).put_file(in_path, out_path)
         out_path = self._shell._unquote(out_path)
         self._display.vvv('PUT "%s" TO "%s"' % (in_path, out_path), host=self._play_context.remote_addr)
         if not os.path.exists(in_path):
             raise AnsibleFileNotFound('file or module does not exist: "%s"' % in_path)
+        in_size = os.path.getsize(in_path)
         with open(in_path) as in_file:
-            in_size = os.path.getsize(in_path)
+            if in_file.read(12).lower() == '#!powershell' and not out_path.lower().endswith('.ps1'):
+                out_path = out_path + '.ps1'
+        try:
+            stdout_queue = Queue.Queue()
             script_template = '''
-                $s = [System.IO.File]::OpenWrite("%s");
-                [void]$s.Seek(%d, [System.IO.SeekOrigin]::Begin);
-                $b = [System.Convert]::FromBase64String("%s");
-                [void]$s.Write($b, 0, $b.length);
-                [void]$s.SetLength(%d);
-                [void]$s.Close();
+                $f = [System.IO.File]::OpenWrite("%s")
+                [void]$f.Seek(%d, [System.IO.SeekOrigin]::Begin)
+                While ($true)
+                {
+                    $s = ([Console]::In.ReadLine()).Trim()
+                    If ($s.Length -eq 0)
+                    {
+                        Break
+                    }
+                    $b = [System.Convert]::FromBase64String($s)
+                    [void]$f.Write($b, 0, $b.length)
+                    Write-Host "@$($f.Position)"
+                    [Console]::Out.Flush()
+                }
+                [void]$f.SetLength(%d)
+                [void]$f.Close()
             '''
-            # Determine max size of data we can pass per command.
-            script = script_template % (self._shell._escape(out_path), in_size, '', in_size)
-            cmd = self._shell._encode_script(script)
-            # Encode script with no data, subtract its length from 8190 (max
-            # windows command length), divide by 2.67 (UTF16LE base64 command
-            # encoding), then by 1.35 again (data base64 encoding).
-            buffer_size = int(((8190 - len(cmd)) / 2.67) / 1.35)
-            for offset in xrange(0, in_size, buffer_size):
-                try:
-                    out_data = in_file.read(buffer_size)
-                    if offset == 0:
-                        if out_data.lower().startswith('#!powershell') and not out_path.lower().endswith('.ps1'):
-                            out_path = out_path + '.ps1'
-                    b64_data = base64.b64encode(out_data)
-                    script = script_template % (self._shell._escape(out_path), offset, b64_data, in_size)
-                    self._display.vvvvv('WINRM PUT "%s" to "%s" (offset=%d size=%d)' % (in_path, out_path, offset, len(out_data)), host=self._play_context.remote_addr)
-                    cmd_parts = self._shell._encode_script(script, as_list=True)
-                    result = self._winrm_exec(cmd_parts[0], cmd_parts[1:])
-                    if result.status_code != 0:
-                        raise IOError(to_unicode(result.std_err))
-                except Exception:
-                    traceback.print_exc()
-                    raise AnsibleError('failed to transfer file to "%s"' % out_path)
+            script = script_template % (self._shell._escape(out_path), 0, in_size)
+            cmd_parts = self._shell._encode_script(script, as_list=True)
+            result = self._winrm_exec(cmd_parts[0], cmd_parts[1:],
+                                      stdin_iterator=self._put_file_stdin_iterator(in_path, out_path, stdout_queue=stdout_queue),
+                                      stdout_queue=stdout_queue)
+            if result.status_code != 0:
+                raise IOError(to_unicode(result.std_err))
+        except Exception:
+            traceback.print_exc()
+            raise AnsibleError('failed to transfer file to "%s"' % out_path)
 
     def fetch_file(self, in_path, out_path):
         super(Connection, self).fetch_file(in_path, out_path)

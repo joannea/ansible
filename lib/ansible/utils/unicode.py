@@ -251,3 +251,22 @@ def to_bytes(obj, encoding='utf-8', errors='replace', nonstring=None):
 # ensure that a filter will return unicode values.
 def unicode_wrap(func, *args, **kwargs):
     return to_unicode(func(*args, **kwargs), nonstring='passthru')
+
+
+def json_dict_bytes_to_unicode(d, encoding='utf-8'):
+    ''' Recursively convert dict keys and values to byte str
+
+        Specialized for json return because this only handles, lists, tuples,
+        and dict container types (the containers that the json module returns)
+    '''
+
+    if isinstance(d, str):
+        return unicode(d, encoding)
+    elif isinstance(d, dict):
+        return dict(imap(json_dict_bytes_to_unicode, d.iteritems(), repeat(encoding)))
+    elif isinstance(d, list):
+        return list(imap(json_dict_bytes_to_unicode, d, repeat(encoding)))
+    elif isinstance(d, tuple):
+        return tuple(imap(json_dict_bytes_to_unicode, d, repeat(encoding)))
+    else:
+        return d

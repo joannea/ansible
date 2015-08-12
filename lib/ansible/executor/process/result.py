@@ -37,6 +37,7 @@ from ansible.playbook.handler import Handler
 from ansible.playbook.task import Task
 
 from ansible.utils.debug import debug
+from ansible.utils.unicode import to_unicode
 
 __all__ = ['ResultProcess']
 
@@ -58,7 +59,7 @@ class ResultProcess(multiprocessing.Process):
         super(ResultProcess, self).__init__()
 
     def _send_result(self, result):
-        debug(u"sending result: %s" % ([unicode(x) for x in result],))
+        debug(u"sending result: %s" % ([to_unicode(x) for x in result],))
         self._final_q.put(result, block=False)
         debug("done sending result")
 

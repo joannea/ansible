@@ -32,6 +32,7 @@ from ansible.playbook.included_file import IncludedFile
 from ansible.playbook.role import hash_params
 from ansible.plugins import _basedirs, filter_loader, lookup_loader, module_loader
 from ansible.template import Templar
+from ansible.utils.unicode import to_unicode
 
 try:
     from __main__ import display
@@ -163,7 +164,7 @@ class StrategyBase:
         while not self._final_q.empty() and not self._tqm._terminated:
             try:
                 result = self._final_q.get(block=False)
-                self._display.debug("got result from result worker: %s" % ([unicode(x) for x in result],))
+                self._display.debug("got result from result worker: %s" % ([to_unicode(x) for x in result],))
 
                 # all host status messages contain 2 entries: (msg, task_result)
                 if result[0] in ('host_task_ok', 'host_task_failed', 'host_task_skipped', 'host_unreachable'):
@@ -382,7 +383,7 @@ class StrategyBase:
             data = self._loader.load_from_file(included_file._filename)
             if data is None:
                 return []
-        except AnsibleError, e:
+        except AnsibleError as e:
             for host in included_file._hosts:
                 tr = TaskResult(host=host, task=included_file._task, return_data=dict(failed=True, reason=str(e)))
                 iterator.mark_host_failed(host)
@@ -455,7 +456,7 @@ class StrategyBase:
                             loader=self._loader,
                             variable_manager=self._variable_manager
                         )
-                    except AnsibleError, e:
+                    except AnsibleError as e:
                         return False
 
                     if len(included_files) > 0:
@@ -475,7 +476,7 @@ class StrategyBase:
                                     # and add the new blocks to the list of handler blocks
                                     handler_block.block.extend(block.block)
                                 #iterator._play.handlers.extend(new_blocks)
-                            except AnsibleError, e:
+                            except AnsibleError as e:
                                 for host in included_file._hosts:
                                     iterator.mark_host_failed(host)
                                     self._tqm._failed_hosts[host.name] = True

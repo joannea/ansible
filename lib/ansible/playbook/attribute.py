@@ -30,6 +30,9 @@ class Attribute:
        self.listof = listof
        self.priority = priority
 
+    def __lt__(self, other):
+        return self.priority > other.priority
+
     def __cmp__(self, other):
        return cmp(other.priority, self.priority)
 

@@ -29,7 +29,8 @@ from ansible import constants as C
 from ansible.errors import *
 from ansible.inventory.host import Host
 from ansible.inventory.group import Group
-from ansible.module_utils.basic import json_dict_bytes_to_unicode
+#from ansible.module_utils.basic import json_dict_bytes_to_unicode
+from ansible.utils.unicode import json_dict_bytes_to_unicode
 
 
 class InventoryScript:
@@ -46,7 +47,7 @@ class InventoryScript:
         cmd = [ self.filename, "--list" ]
         try:
             sp = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        except OSError, e:
+        except OSError as e:
             raise AnsibleError("problem running %s (%s)" % (' '.join(cmd), e))
         (stdout, stderr) = sp.communicate()
 
@@ -153,7 +154,7 @@ class InventoryScript:
         cmd = [self.filename, "--host", host.name]
         try:
             sp = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        except OSError, e:
+        except OSError as e:
             raise AnsibleError("problem running %s (%s)" % (' '.join(cmd), e))
         (out, err) = sp.communicate()
         if out.strip() == '':

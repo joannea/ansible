@@ -22,6 +22,8 @@ __metaclass__ = type
 import ast
 import re
 
+import six
+
 from jinja2 import Environment
 from jinja2.loaders import FileSystemLoader
 from jinja2.exceptions import TemplateSyntaxError, UndefinedError
@@ -173,7 +175,7 @@ class Templar:
             if convert_bare:
                 variable = self._convert_bare_variable(variable)
 
-            if isinstance(variable, basestring):
+            if isinstance(variable, six.string_types):
                 result = variable
                 if self._contains_vars(variable):
 
@@ -231,7 +233,7 @@ class Templar:
         in jinja2 variable braces so that it is evaluated properly.
         '''
 
-        if isinstance(variable, basestring):
+        if isinstance(variable, six.string_types):
             contains_filters = "|" in variable
             first_part = variable.split("|")[0].split(".")[0].split("[")[0]
             if (contains_filters or first_part in self._available_variables) and self.environment.variable_start_string not in variable:
@@ -258,7 +260,7 @@ class Templar:
                 ran = instance.run(loop_terms, variables=self._available_variables, **kwargs)
             except (AnsibleUndefinedVariable, UndefinedError):
                 raise
-            except Exception, e:
+            except Exception as e:
                 if self._fail_on_lookup_errors:
                     raise
                 ran = None
@@ -296,9 +298,9 @@ class Templar:
 
             try:
                 t = myenv.from_string(data)
-            except TemplateSyntaxError, e:
+            except TemplateSyntaxError as e:
                 raise AnsibleError("template error while templating string: %s" % str(e))
-            except Exception, e:
+            except Exception as e:
                 if 'recursion' in str(e):
                     raise AnsibleError("recursive loop detected in template string: %s" % data)
                 else:
@@ -314,7 +316,7 @@ class Templar:
 
             try:
                 res = j2_concat(rf)
-            except TypeError, te:
+            except TypeError as te:
                 if 'StrictUndefined' in str(te):
                     raise AnsibleUndefinedVariable(
                         "Unable to look up a name or access an attribute in template string. " + \
@@ -335,7 +337,7 @@ class Templar:
                     res += '\n' * (data_newlines - res_newlines)
 
             return res
-        except (UndefinedError, AnsibleUndefinedVariable), e:
+        except (UndefinedError, AnsibleUndefinedVariable) as e:
             if fail_on_undefined:
                 raise
             else:

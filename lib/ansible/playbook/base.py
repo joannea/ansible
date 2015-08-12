@@ -37,6 +37,7 @@ from ansible.playbook.attribute import Attribute, FieldAttribute
 from ansible.template import Templar
 from ansible.utils.boolean import boolean
 from ansible.utils.debug import debug
+from ansible.utils.unicode import to_unicode
 from ansible.utils.vars import combine_vars
 from ansible.template import template
 
@@ -286,7 +287,7 @@ class Base:
                 # and make sure the attribute is of the type it should be
                 if value is not None:
                     if attribute.isa == 'string':
-                        value = unicode(value)
+                        value = to_unicode(value)
                     elif attribute.isa == 'int':
                         value = int(value)
                     elif attribute.isa == 'bool':

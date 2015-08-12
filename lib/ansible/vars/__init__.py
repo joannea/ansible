@@ -101,7 +101,7 @@ class VariableManager:
         if C.DEFAULT_HASH_BEHAVIOUR == "merge":
             return self._merge_dicts(a, b)
         else:
-            return dict(a.items() + b.items())
+            return dict(list(a.items()) + list(b.items()))
 
     def _merge_dicts(self, a, b):
         '''
@@ -215,12 +215,12 @@ class VariableManager:
                             break
                     else:
                         raise AnsibleError("vars file %s was not found" % vars_file_item)
-                except AnsibleError, e:
+                except AnsibleError as e:
                     # FIXME: get_vars should probably be taking a flag to determine
                     #        whether or not vars files errors should be fatal at this
                     #        stage, or just base it on whether a host was specified?
                     pass
-                except UndefinedError, e:
+                except UndefinedError as e:
                     continue
 
             if not C.DEFAULT_PRIVATE_ROLE_VARS:

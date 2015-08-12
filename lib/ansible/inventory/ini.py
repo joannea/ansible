@@ -144,7 +144,7 @@ class InventoryParser(object):
                                 break
                             try:
                                 (k,v) = t.split("=", 1)
-                            except ValueError, e:
+                            except ValueError as e:
                                 raise AnsibleError("Invalid ini entry in %s: %s - %s" % (self.filename, t, str(e)))
                             v = self._parse_value(v)
                             if k == 'ansible_ssh_host':

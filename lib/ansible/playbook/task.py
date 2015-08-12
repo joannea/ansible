@@ -19,6 +19,8 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
+import six
+
 from ansible.errors import AnsibleError
 
 from ansible.parsing.mod_args import ModuleArgsParser
@@ -105,11 +107,11 @@ class Task(Base, Conditional, Taggable, Become):
     def _merge_kv(self, ds):
         if ds is None:
             return ""
-        elif isinstance(ds, basestring):
+        elif isinstance(ds, six.string_types):
             return ds
         elif isinstance(ds, dict):
             buf = ""
-            for (k,v) in ds.iteritems():
+            for (k,v) in ds.items():
                 if k.startswith('_'):
                     continue
                 buf = buf + "%s=%s " % (k,v)
@@ -171,7 +173,7 @@ class Task(Base, Conditional, Taggable, Become):
         else:
             new_ds['vars'] = dict()
 
-        for (k,v) in ds.iteritems():
+        for (k,v) in ds.items():
             if k in ('action', 'local_action', 'args', 'delegate_to') or k == action or k == 'shell':
                 # we don't want to re-assign these values, which were
                 # determined by the ModuleArgsParser() above

@@ -264,29 +264,31 @@ class Connection(ConnectionBase):
             raise AnsibleFileNotFound('file or module does not exist: "%s"' % in_path)
 
         script_template = '''
-            $path = "{0}"
+            begin {{
+                $path = "{0}"
 
-            $DebugPreference = "Continue"
-            $ErrorActionPreference = "Stop"
-            Set-StrictMode -Version 2
+                $DebugPreference = "Continue"
+                $ErrorActionPreference = "Stop"
+                Set-StrictMode -Version 2
 
-            $fd = [System.IO.File]::Create($path)
+                $fd = [System.IO.File]::Create($path)
 
-            $sha1 = [System.Security.Cryptography.SHA1CryptoServiceProvider]::Create()
-
-            $input | % {{
-               $bytes = [System.Convert]::FromBase64String($_)
+                $sha1 = [System.Security.Cryptography.SHA1CryptoServiceProvider]::Create()
+            }}
+            process {{
+               $bytes = [System.Convert]::FromBase64String($input)
                $sha1.TransformBlock($bytes, 0, $bytes.Length, $bytes, 0) | Out-Null
                $fd.Write($bytes, 0, $bytes.Length)
             }}
+            end {{
+                $sha1.TransformFinalBlock($bytes, 0, 0) | Out-Null
 
-            $sha1.TransformFinalBlock($bytes, 0, 0) | Out-Null
+                $hash = [System.BitConverter]::ToString($sha1.Hash).Replace("-", "").ToLowerInvariant()
 
-            $hash = [System.BitConverter]::ToString($sha1.Hash).Replace("-", "").ToLowerInvariant()
+                $fd.Close()
 
-            $fd.Close()
-
-            Write-Output "{{""sha1"":""$hash""}}"
+                Write-Output "{{""sha1"":""$hash""}}"
+            }}
         '''
 
         # TODO: this sucks- why can't the module/shell stuff do this?
@@ -295,9 +297,9 @@ class Connection(ConnectionBase):
                 out_path = out_path + '.ps1'
 
         script = script_template.format(self._shell._escape(out_path))
-        cmd = self._shell._encode_script(script)
+        cmd = self._shell._encode_script(script, strict_mode=False)
 
-        cmd_parts = self._shell._encode_script(script, as_list=True)
+        cmd_parts = self._shell._encode_script(script, as_list=True, strict_mode=False)
 
         result = self._winrm_exec(cmd_parts[0], cmd_parts[1:], stdin_iterator=self._put_file_stdin_iterator(in_path, out_path))
         # TODO: improve error handling

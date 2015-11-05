@@ -247,7 +247,6 @@ class Connection(ConnectionBase):
         in_size = os.path.getsize(in_path)
         offset = 0
         with open(in_path, 'rb') as in_file:
-            # TODO: short-circuit empty source file?
             for out_data in iter((lambda:in_file.read(buffer_size)), ''):
                 offset += len(out_data)
                 self._display.vvvvv('WINRM PUT "%s" to "%s" (offset=%d size=%d)' % (in_path, out_path, offset, len(out_data)), host=self._winrm_host)
@@ -255,6 +254,9 @@ class Connection(ConnectionBase):
                 b64_data = base64.b64encode(out_data) + '\r\n'
                 # cough up the data, as well as an indicator if this is the last chunk so winrm_send knows to set the End signal
                 yield b64_data, (in_file.tell() == in_size)
+
+            if offset == 0: # empty file, return an empty buffer + eof to close it
+                yield "", True
 
     def put_file(self, in_path, out_path):
         super(Connection, self).put_file(in_path, out_path)
@@ -274,6 +276,8 @@ class Connection(ConnectionBase):
                 $fd = [System.IO.File]::Create($path)
 
                 $sha1 = [System.Security.Cryptography.SHA1CryptoServiceProvider]::Create()
+
+                $bytes = @() #initialize for empty file case
             }}
             process {{
                $bytes = [System.Convert]::FromBase64String($input)
